@@ -1,4 +1,4 @@
-import {Vector} from './types.js';
+import {Vector, Matrix} from './types.js';
 import * as io from './io.js';
 import {PhysicsObject, AABB, Circle, intersect} from './physics.js';
 
@@ -40,6 +40,103 @@ class Crate extends PhysicsObject {
 Crate.image = new Image;
 Crate.image.src = "crate.png";
 
+class Child {
+  constructor(object, offset, angleOffset) {
+    if (object.inverseMass == 0 || object.inverseInertia == 0) {
+      throw new Error('Infinitely massive objects cannot be child nodes.');
+    }
+    this.object = object;
+    this.offset = offset;
+    this.angleOffset = angleOffset;
+  }
+}
+
+class Group {
+  constructor(children) {
+    this.children = children;
+    // Compute combined momentum.
+    this.mass = 0;
+    let offset = new Vector;
+    for (const child of children) {
+      const childMass = 1 / child.object.inverseMass;
+      this.mass += childMass;
+      offset = offset.add(child.offset.mul(childMass));
+    }
+    offset = offset.mul(1 / this.mass);
+    // Ensure that the offsets are all relative to the centre of mass.
+    for (const child of this.children) {
+      child.offset = child.offset.sub(offset);
+    }
+    this.inertia = 0;
+    for (const child of children) {
+      const childMass = 1 / child.object.inverseMass;
+      const childInertia = 1 / child.object.inverseInertia;
+      this.inertia += childInertia + childMass * child.offset.dot(child.offset);
+    }
+  }
+  update(dt) {
+    // Compute combined momentum.
+    let momentum = new Vector;
+    let massCenter = new Vector;
+    let angularMomentum = 0;
+    for (const child of this.children) {
+      const childMass = 1 / child.object.inverseMass;
+      const childInertia = 1 / child.object.inverseInertia;
+      massCenter = massCenter.add(child.object.position.mul(childMass));
+      momentum = momentum.add(child.object.velocity.mul(childMass));
+      angularMomentum += child.object.angularVelocity * childInertia;
+    }
+    massCenter = massCenter.mul(1 / this.mass);
+    // Add the angular momentum given by the linear component of children.
+    for (const child of this.children) {
+      const childMass = 1 / child.object.inverseMass;
+      const r = child.object.position.sub(massCenter);
+      // We need to account for objects being further apart than they are
+      // supposed to be to avoid that introducing unwanted additional energy.
+      const distance = r.length();
+      const intendedDistance = child.offset.length();
+      angularMomentum += childMass * r.cross(child.object.velocity) *
+          intendedDistance / distance;
+    }
+    // Derive the expected velocities.
+    const velocity = momentum.mul(1 / this.mass);
+    const angularVelocity = angularMomentum / this.inertia;
+    // Update velocities.
+    for (const child of this.children) {
+      const offset = child.object.position.sub(massCenter);
+      const distance = offset.length();
+      const intendedDistance = child.offset.length();
+      const rotationalVelocity =
+          offset.rotate90().mul(angularVelocity * intendedDistance / distance);
+      child.object.angularVelocity = angularVelocity;
+      child.object.velocity = velocity.add(rotationalVelocity);
+    }
+    // Correct the relative offsets of objects.
+    let orientation = new Vector;
+    for (const child of this.children) {
+      const offset = child.object.position.sub(massCenter);
+      const childMass = 1 / child.object.inverseMass;
+      orientation = orientation.add(
+          Vector.fromAngle(offset.angle() - child.offset.angle())
+              .mul(childMass));
+    }
+    const angle = orientation.angle();
+    const matrix = Matrix.rotate(angle);
+    const amount = 0.8;
+    for (const child of this.children) {
+      const current = child.object.position;
+      const target = massCenter.add(matrix.apply(child.offset));
+      child.object.position = current.add(target.sub(current).mul(amount));
+      child.object.angle = angle + child.angleOffset;
+    }
+    debugger;
+  }
+}
+
+function weld(...objects) {
+  return new Group(objects.map(o => new Child(o, o.position, o.angle)));
+}
+
 const universe = [];
 const planet = new Planet(30);
 universe.push(planet);
@@ -51,7 +148,14 @@ for (let i = 0; i < 5; i++) {
   crate.position = box.position.sub(new Vector(0, 0.5 * (1 + i)));
   universe.push(crate);
 }
-window.box = box;
+const a = new Crate(new Vector(0.5, 0.5));
+const b = new Crate(new Vector(0.5, 0.5));
+const c = new Crate(new Vector(0.5, 0.5));
+a.position = box.position.sub(new Vector(3, 1));
+b.position = box.position.sub(new Vector(4, 1));
+c.position = box.position.sub(new Vector(3.5, 2));
+universe.push(a, b, c);
+const triangle = weld(a, b, c);
 io.camera.position = box.position;
 
 let heldItem = null;
@@ -102,6 +206,7 @@ function innerTick(dt) {
   for (const x of universe) {
     x.update(dt);
   }
+  triangle.update(dt);
   // Resolve collisions.
   for (let i = 0, n = universe.length; i < n; i++) {
     const movableA = universe[i].movable();

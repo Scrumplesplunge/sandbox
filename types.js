@@ -3,6 +3,9 @@ export class Vector {
     this.x = x;
     this.y = y;
   }
+  static fromAngle(r) {
+    return new Vector(Math.cos(r), Math.sin(r));
+  }
   clone() { return new Vector(this.x, this.y) }
   add(v) { return new Vector(this.x + v.x, this.y + v.y) }
   sub(v) { return new Vector(this.x - v.x, this.y - v.y) }
@@ -12,6 +15,7 @@ export class Vector {
   rotate90() { return new Vector(-this.y, this.x) }
   length() { return Math.sqrt(this.dot(this)) }
   neg() { return new Vector(-this.x, -this.y) }
+  angle() { return Math.atan2(this.y, this.x) }
   normalized() {
     const length = this.length();
     return length == 0 ? new Vector(1, 0) : this.mul(1 / length);
