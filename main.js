@@ -40,6 +40,45 @@ class Crate extends PhysicsObject {
 Crate.image = new Image;
 Crate.image.src = "crate.png";
 
+const keys = new Set;
+addEventListener('keydown', event => keys.add(event.code));
+addEventListener('keyup', event => keys.delete(event.code));
+
+class Thruster extends PhysicsObject {
+  constructor(key, force, size) {
+    super(new AABB(size.mul(-0.5), size.mul(0.5)));
+    this.size = size;
+    this.force = force;
+    this.key = key;
+    this.throttle = 0;
+  }
+  update(dt) {
+    this.throttle = keys.has(this.key) ? 1 : 0;
+    this.applyImpulse(
+        Vector.fromAngle(this.angle)
+            .rotate90()
+            .mul(-dt * this.force * this.throttle),
+        this.position);
+    super.update(dt);
+  }
+  draw(context) {
+    context.save();
+      context.translate(this.position.x, this.position.y);
+      context.rotate(this.angle);
+      const extent = this.size.mul(0.5);
+      const flameHeight = this.throttle * 2 * this.size.y;
+      context.drawImage(
+          Thruster.flameImage, -extent.x, extent.y, this.size.x, flameHeight);
+      context.drawImage(
+          Thruster.image, -extent.x, -extent.y, this.size.x, this.size.y);
+    context.restore();
+  }
+}
+Thruster.image = new Image;
+Thruster.image.src = 'thruster.png';
+Thruster.flameImage = new Image;
+Thruster.flameImage.src = 'flame.png';
+
 class Child {
   constructor(object, offset, angleOffset) {
     if (object.inverseMass == 0 || object.inverseInertia == 0) {
@@ -139,23 +178,35 @@ function weld(...objects) {
 const universe = [];
 const planet = new Planet(30);
 universe.push(planet);
-const box = new Crate(new Vector(0.5, 0.5));
-box.position = new Vector(0, -planet.radius - 0.25);
-universe.push(box);
-for (let i = 0; i < 5; i++) {
-  const crate = new Crate(new Vector(0.5, 0.5));
-  crate.position = box.position.sub(new Vector(0, 0.5 * (1 + i)));
-  universe.push(crate);
+const origin = new Vector(0, -planet.radius - 0.25);
+for (let y = 0; y < 5; y++) {
+  for (let x = 0; x < 5; x++) {
+    const crate = new Crate(new Vector(0.5, 0.5));
+    crate.position = origin.sub(new Vector(0.5 * (x - 2), 0.5 * y));
+    universe.push(crate);
+  }
 }
-const a = new Crate(new Vector(0.5, 0.5));
-const b = new Crate(new Vector(0.5, 0.5));
-const c = new Crate(new Vector(0.5, 0.5));
-a.position = box.position.sub(new Vector(3, 1));
-b.position = box.position.sub(new Vector(4, 1));
-c.position = box.position.sub(new Vector(3.5, 2));
-universe.push(a, b, c);
-const triangle = weld(a, b, c);
-io.camera.position = box.position;
+const a = new Thruster('KeyW', 40, new Vector(0.2, 0.2));
+const b = new Thruster('KeyW', 40, new Vector(0.2, 0.2));
+const c = new Crate(new Vector(1, 1));
+const d = new Thruster('KeyA', 10, new Vector(0.1, 0.1));
+const e = new Thruster('KeyD', 10, new Vector(0.1, 0.1));
+a.position = origin.sub(new Vector(2.3, 1.4));
+b.position = origin.sub(new Vector(2.7, 1.4));
+c.position = origin.sub(new Vector(2.5, 2));
+c.inverseMass = 0.2;
+d.position = origin.sub(new Vector(1.95, 2.4));
+d.angle = -Math.PI / 2;
+d.inverseMass = 10;
+d.inverseInertia = 10;
+e.position = origin.sub(new Vector(3.05, 2.4));
+e.angle = Math.PI / 2;
+e.inverseMass = 10;
+e.inverseInertia = 10;
+universe.push(a, b, c, d, e);
+const triangle = weld(a, b, c, d, e);
+let focus = c;
+io.camera.position = focus.position;
 
 // Set the planet spinning.
 planet.angularVelocity = 0.1;
@@ -190,6 +241,8 @@ function applyGravity(dt) {
   while (start < n && universe[start].inverseMass == 0) start++;
   for (let a = start; a < n; a++) {
     const aMass = 1 / universe[a].inverseMass;
+    // Anything weighing less than 1e10 has negligible effect on anything else.
+    if (aMass < 1e10) continue;
     for (let b = a + 1; b < n; b++) {
       const bMass = 1 / universe[b].inverseMass;
       const offset = universe[b].position.sub(universe[a].position);
@@ -245,13 +298,14 @@ async function main() {
     }
     const rounds = 5;
     for (let i = 0; i < rounds; i++) innerTick(deltaTime / rounds);
-    const target = box.position;
+    const target = focus.position;
     const current = io.camera.position;
-    const offset = box.position.sub(io.camera.position);
-    const offsetHalfLife = 0.01;
+    const offset = focus.position.sub(io.camera.position);
+    const offsetHalfLife = 0.5;
     const factor = 1 - Math.pow(0.5, deltaTime / offsetHalfLife);
     io.camera.position = current.add(offset.mul(factor));
-    io.camera.angle = Math.atan2(box.gravity.y, box.gravity.x) - Math.PI / 2;
+    io.camera.angle =
+        Math.atan2(focus.gravity.y, focus.gravity.x) - Math.PI / 2;
     io.draw(context => {
       for (const x of universe) x.draw(context);
     });
