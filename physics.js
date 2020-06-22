@@ -103,14 +103,27 @@ export class Collision {
   }
 }
 
+export function boundingRadius(points) {
+  let radius = 0;
+  for (const point of points) {
+    const distance = point.length();
+    if (distance > radius) {
+      radius = distance;
+    }
+  }
+  return radius;
+}
+
+// Points must be arranged clockwise on a canvas grid (y down).
 export class Polygon {
-  constructor(points) {
-    // Points must be arranged clockwise on a canvas grid (y down).
+  constructor(points, radius) {
     this.points = points;
+    this.radius = radius ?? boundingRadius(points);
   }
   at(position, angle) {
     const m = Matrix.rotate(angle);
-    return new Polygon(this.points.map(v => m.apply(v).add(position)));
+    return new Polygon(
+        this.points.map(v => m.apply(v).add(position)), this.radius);
   }
   draw(context) {
     context.beginPath();
@@ -183,6 +196,8 @@ function leastPenetration(a, b) {
 }
 
 export function intersect(oa, ob) {
+  const offset = ob.position.sub(oa.position);
+  if (offset.dot(offset) >= (oa.mesh.radius + ob.mesh.radius) ** 2) return null;
   const a = oa.getMesh(), b = ob.getMesh();
   const penetrationA = leastPenetration(a, b);
   if (!penetrationA) return null;
