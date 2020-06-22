@@ -129,7 +129,6 @@ class Group {
       child.object.position = current.add(target.sub(current).mul(amount));
       child.object.angle = angle + child.angleOffset;
     }
-    debugger;
   }
 }
 
