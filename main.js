@@ -74,7 +74,7 @@ class Group {
       this.inertia += childInertia + childMass * child.offset.dot(child.offset);
     }
   }
-  update(dt) {
+  update() {
     // Compute combined momentum.
     let momentum = new Vector;
     let massCenter = new Vector;
@@ -157,6 +157,12 @@ universe.push(a, b, c);
 const triangle = weld(a, b, c);
 io.camera.position = box.position;
 
+// Set the planet spinning.
+planet.angularVelocity = 0.1;
+// Create a transient weld for all items. This will make everything stationary
+// relative to everything else.
+weld(...universe).update();
+
 let heldItem = null;
 let holdOffset = new Vector;
 
@@ -205,7 +211,7 @@ function innerTick(dt) {
   for (const x of universe) {
     x.update(dt);
   }
-  triangle.update(dt);
+  triangle.update();
   // Resolve collisions.
   for (let i = 0, n = universe.length; i < n; i++) {
     const movableA = universe[i].movable();
@@ -242,7 +248,7 @@ async function main() {
     const target = box.position;
     const current = io.camera.position;
     const offset = box.position.sub(io.camera.position);
-    const offsetHalfLife = 0.5;
+    const offsetHalfLife = 0.01;
     const factor = 1 - Math.pow(0.5, deltaTime / offsetHalfLife);
     io.camera.position = current.add(offset.mul(factor));
     io.camera.angle = Math.atan2(box.gravity.y, box.gravity.x) - Math.PI / 2;
